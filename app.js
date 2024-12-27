@@ -131,7 +131,7 @@ const fetchTrendingTopics = async () => {
       }
 
       await driver.navigate().refresh();
-      await delay(2000);
+      await delay(120000);
       await debugPageState(driver, "after-refresh");
 
       const trendingSection = await driver.wait(
