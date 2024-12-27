@@ -99,12 +99,12 @@ const fetchTrendingTopics = async () => {
   console.log(`[DEBUG] Using Proxy: ${proxyServer}`);
 
   const options = new chrome.Options().addArguments(
-    // "--headless",
+    "--headless",
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--disable-ssl-errors",
     "--enable-logging",
-    "--v=1"
+    "--v=2"
   );
 
   const driver = await new Builder()
