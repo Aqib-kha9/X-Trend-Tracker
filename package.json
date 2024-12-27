@@ -1,0 +1,21 @@
+{
+  "type": "module",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "server": "nodemon app.js",
+    "build": "npm run build"
+  },
+  "dependencies": {
+    "chromedriver": "^131.0.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0",
+    "mongoose": "^8.9.2",
+    "node-fetch": "^3.3.2",
+    "puppeteer": "^23.11.1",
+    "selenium-webdriver": "^4.27.0",
+    "uuid": "^11.0.3"
+  }
+}
