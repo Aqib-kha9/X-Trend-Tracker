@@ -99,7 +99,7 @@ const fetchTrendingTopics = async () => {
   console.log(`[DEBUG] Using Proxy: ${proxyServer}`);
 
   const options = new chrome.Options().addArguments(
-    "--headless",
+    // "--headless",
     "--no-sandbox",
     "--disable-dev-shm-usage",
     "--disable-ssl-errors",
@@ -131,7 +131,7 @@ const fetchTrendingTopics = async () => {
       }
 
       await driver.navigate().refresh();
-      await delay(120000);
+      await delay(30000);
       await debugPageState(driver, "after-refresh");
 
       const trendingSection = await driver.wait(
