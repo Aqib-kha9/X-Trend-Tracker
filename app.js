@@ -133,6 +133,8 @@ const fetchTrendingTopics = async () => {
       await driver.navigate().refresh();
       await delay(30000);
       await debugPageState(driver, "after-refresh");
+      const fullPageScreenshot = await driver.takeScreenshot();
+      fs.writeFileSync("full-homepage.png", fullPageScreenshot, "base64");
 
       const trendingSection = await driver.wait(
         until.elementLocated(By.css('[aria-label="Timeline: Trending now"]')),
