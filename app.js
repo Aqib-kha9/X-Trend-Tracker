@@ -14,17 +14,87 @@ dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 const EXPLORE_URL = process.env.EXPLORE_URL;
-const USERNAME = process.env.USERNAME;
-const PASSWORD = process.env.PASSWORD;
-const proxyServer = `http://${USERNAME}:${PASSWORD}@open.proxymesh.com:31280`;
-
 const app = express();
 app.use(cors());
 app.use(express.static(path.join(process.cwd(), "public")));
 connectDB();
 
+const USERNAME = process.env.USERNAME;
+const PASSWORD = process.env.PASSWORD;
+const proxyServer = `http://${USERNAME}:${PASSWORD}@open.proxymesh.com:31280`;
+
 // Utility function for delay
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Debug helper function to capture screenshots and logs
+const debugPageState = async (driver, step) => {
+  try {
+    const screenshotPath = path.join(process.cwd(), `public/debug-${step}.png`);
+    const image = await driver.takeScreenshot();
+    fs.writeFileSync(screenshotPath, image, "base64");
+
+    console.log(`[DEBUG] Step: ${step}`);
+    console.log(`[DEBUG] Screenshot saved at: ${screenshotPath}`);
+
+    const url = await driver.getCurrentUrl();
+    console.log(`[DEBUG] Current URL: ${url}`);
+
+    const pageContent = await driver.executeScript(() =>
+      document.body.innerText.slice(0, 500)
+    );
+    console.log(`[DEBUG] Page Content Preview:\n${pageContent}`);
+  } catch (error) {
+    console.error(
+      `[DEBUG ERROR] Debugging step "${step}" failed:`,
+      error.message
+    );
+    throw error;
+  }
+};
+
+// Utility function to fix SameSite cookie issues
+const fixSameSiteCookies = (cookies) =>
+  cookies.map((cookie) => {
+    if (cookie.hasOwnProperty("sameSite")) {
+      const value = cookie.sameSite.toLowerCase();
+      if (["unspecified", "no_restriction"].includes(value))
+        cookie.sameSite = "Lax";
+      else cookie.sameSite = value.charAt(0).toUpperCase() + value.slice(1);
+
+      if (cookie.sameSite === "None") cookie.secure = true;
+    }
+    return cookie;
+  });
+
+// Retry-enabled function to fetch current IP address via proxy
+const fetchIP = (retries = 3) => {
+  const command = `curl -x ${proxyServer} --insecure https://api.ipify.org`;
+
+  return new Promise((resolve, reject) => {
+    const attempt = (retryCount) => {
+      exec(command, (error, stdout, stderr) => {
+        if (!error) {
+          resolve(stdout.trim());
+        } else if (retryCount > 0) {
+          console.log(
+            `[DEBUG] Retry fetch IP (${retries - retryCount + 1}/${retries})`
+          );
+          attempt(retryCount - 1);
+        } else {
+          reject(
+            new Error(
+              `[ERROR] Failed after ${retries} retries: ${
+                stderr || error.message
+              }`
+            )
+          );
+        }
+      });
+    };
+
+    attempt(retries);
+  });
+};
 
 // Scroll the page dynamically to load all content
 const scrollToEnd = async (driver) => {
@@ -44,43 +114,11 @@ const scrollToEnd = async (driver) => {
   }
 };
 
-// Debug helper function to capture screenshots and logs
-const debugPageState = async (driver, step) => {
-  try {
-    const screenshotPath = path.join(process.cwd(), `public/debug-${step}.png`);
-    const image = await driver.takeScreenshot();
-    fs.writeFileSync(screenshotPath, image, "base64");
-
-    console.log(`[DEBUG] Step: ${step}`);
-    console.log(`[DEBUG] Screenshot saved at: ${screenshotPath}`);
-  } catch (error) {
-    console.error(`[DEBUG ERROR] Debugging step "${step}" failed:`, error.message);
-    throw error;
-  }
-};
-
-// Retry-enabled function to fetch current IP address via proxy
-const fetchIP = (retries = 3) => {
-  const command = `curl -x ${proxyServer} --insecure https://api.ipify.org`;
-  return new Promise((resolve, reject) => {
-    const attempt = (retryCount) => {
-      exec(command, (error, stdout, stderr) => {
-        if (!error) {
-          resolve(stdout.trim());
-        } else if (retryCount > 0) {
-          console.log(`[DEBUG] Retry fetch IP (${retries - retryCount + 1}/${retries})`);
-          attempt(retryCount - 1);
-        } else {
-          reject(new Error(`[ERROR] Failed after ${retries} retries: ${stderr || error.message}`));
-        }
-      });
-    };
-    attempt(retries);
-  });
-};
-
 // Fetch trending topics using Selenium with proxy rotation
 const fetchTrendingTopics = async () => {
+  const startTime = Date.now();
+  console.log(`[DEBUG] Using Proxy: ${proxyServer}`);
+
   const options = new chrome.Options().addArguments(
     "--headless",
     "--no-sandbox",
@@ -90,7 +128,10 @@ const fetchTrendingTopics = async () => {
     "--v=2"
   );
 
-  const driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
+  const driver = await new Builder()
+    .forBrowser("chrome")
+    .setChromeOptions(options)
+    .build();
 
   try {
     await driver.manage().deleteAllCookies(); // Clear cookies before starting
@@ -100,6 +141,8 @@ const fetchTrendingTopics = async () => {
     const cookiesPath = path.resolve("cookies.json");
     if (fs.existsSync(cookiesPath)) {
       let cookies = JSON.parse(fs.readFileSync(cookiesPath, "utf-8"));
+      cookies = fixSameSiteCookies(cookies);
+
       await driver.get(EXPLORE_URL);
       await debugPageState(driver, "before-setting-cookies");
 
@@ -137,8 +180,10 @@ const fetchTrendingTopics = async () => {
           .filter((trend) => trend !== null);
       });
 
-      console.log("[INFO] Extracted Trends:", trends);
-      return { id: uuidv4(), trends, ip: ipAddress };
+      const top5Trends = trends.slice(0, 5); // Get top 5 trends
+      console.log("[DEBUG] Parsed top 5 trends:", top5Trends);
+
+      return { id: uuidv4(), trends: top5Trends, ip: ipAddress };
     } else {
       throw new Error("Cookies file not found.");
     }
@@ -146,13 +191,16 @@ const fetchTrendingTopics = async () => {
     console.error("[ERROR] Failed to fetch trending topics:", error.message);
     throw error;
   } finally {
+    console.log("[DEBUG] Quitting driver...");
     await driver.quit();
+    console.log("[DEBUG] Driver quit successfully.");
   }
 };
 
 // Save data to MongoDB
 const saveToDatabase = async (data) => {
   try {
+    console.log("Saving data:", data);
     const trendingData = new Trending(data);
     await trendingData.save();
     console.log("[INFO] Data saved to MongoDB.");
@@ -167,8 +215,9 @@ app.get("/run-script", async (req, res) => {
   try {
     const data = await fetchTrendingTopics();
     await saveToDatabase(data);
-    res.json(data);
+    res.json(data); // Send successful response
   } catch (error) {
+    console.error("[ERROR] Error in /run-script:", error.message);
     res.status(500).json({
       message: "[ERROR] Error in /run-script:",
       error: error.message,
